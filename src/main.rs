@@ -1,7 +1,7 @@
 extern crate eom;
 extern crate ndarray;
 
-use ndarray::arr1;
+use ndarray::*;
 use eom::*;
 use eom::traits::*;
 
@@ -11,14 +11,21 @@ struct Setting {
     pub skip: usize,
 }
 
+struct Doc {
+    time: f64,
+    data: Vec<f64>,
+}
+
 fn exec(setting: Setting, _name: &str) {
     let eom = ode::Lorenz63::default();
     let mut teo = explicit::RK4::new(eom, setting.dt);
     let ts = adaptor::time_series(arr1(&[1.0, 0.0, 0.0]), &mut teo);
-    println!("time,x,y,z");
     for (t, v) in ts.take(setting.duration).enumerate() {
         if t % setting.skip == 0 {
-            println!("{},{},{},{}", t as f64 * setting.dt, v[0], v[1], v[2]);
+            let _doc = Doc {
+                time: t as f64 * setting.dt,
+                data: v.to_vec(),
+            };
         }
     }
 }
