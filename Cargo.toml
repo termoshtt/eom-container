@@ -4,8 +4,9 @@ version = "0.1.0"
 authors = ["Toshiki Teramura <toshiki.teramura@gmail.com>"]
 
 [dependencies]
-serde = "*"
-serde_derive = "*"
-bson = "*"
-eom = "*"
-ndarray = "*"
+serde = "1.0"
+serde_derive = "1.0"
+mongodb = "0.3"
+bson = "0.10"
+eom = "0.10"
+ndarray = "0.11"

@@ -3,6 +3,7 @@ extern crate serde;
 extern crate serde_derive;
 
 extern crate bson;
+extern crate mongodb;
 
 extern crate eom;
 extern crate ndarray;
@@ -10,6 +11,8 @@ extern crate ndarray;
 use ndarray::*;
 use eom::*;
 use eom::traits::*;
+use mongodb::ThreadedClient;
+use mongodb::db::ThreadedDatabase;
 
 struct Setting {
     pub dt: f64,
@@ -33,16 +36,21 @@ impl Doc {
     }
 }
 
-fn exec(setting: Setting, _name: &str) {
+fn exec(setting: Setting, name: &str) {
     let eom = ode::Lorenz63::default();
     let mut teo = explicit::RK4::new(eom, setting.dt);
     let ts = adaptor::time_series(arr1(&[1.0, 0.0, 0.0]), &mut teo);
+
+    let cli = mongodb::Client::connect("localhost", 27017).unwrap();
+    let coll = cli.db("eom").collection(name);
+
     for (t, v) in ts.take(setting.duration).enumerate() {
         if t % setting.skip == 0 {
-            let _doc = Doc {
+            let doc = Doc {
                 time: t as f64 * setting.dt,
                 data: v.to_vec(),
             }.to_document();
+            coll.insert_one(doc, None).unwrap();
         }
     }
 }
