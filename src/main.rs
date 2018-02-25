@@ -1,3 +1,9 @@
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
+
+extern crate bson;
+
 extern crate eom;
 extern crate ndarray;
 
@@ -11,9 +17,20 @@ struct Setting {
     pub skip: usize,
 }
 
+#[derive(Serialize)]
 struct Doc {
     time: f64,
     data: Vec<f64>,
+}
+
+impl Doc {
+    fn to_document(&self) -> bson::Document {
+        use bson::Bson::*;
+        match bson::to_bson(self).unwrap() {
+            Document(d) => d,
+            _ => unreachable!("Invalid"),
+        }
+    }
 }
 
 fn exec(setting: Setting, _name: &str) {
@@ -25,7 +42,7 @@ fn exec(setting: Setting, _name: &str) {
             let _doc = Doc {
                 time: t as f64 * setting.dt,
                 data: v.to_vec(),
-            };
+            }.to_document();
         }
     }
 }
