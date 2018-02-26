@@ -4,6 +4,7 @@ extern crate serde_derive;
 
 extern crate bson;
 extern crate mongodb;
+extern crate redis;
 
 extern crate eom;
 extern crate ndarray;
@@ -15,6 +16,7 @@ use eom::*;
 use eom::traits::*;
 use mongodb::ThreadedClient;
 use mongodb::db::ThreadedDatabase;
+use redis::Commands;
 
 #[derive(Serialize)]
 struct Doc {
@@ -73,7 +75,12 @@ fn output(setting: OutputSetting, recv: Receiver<Doc>) -> JoinHandle<()> {
     })
 }
 
-fn main() {
+fn get_setting() -> (RunSetting, OutputSetting) {
+    let cli = redis::Client::open("redis://localhost").unwrap();
+    let con = cli.get_connection().unwrap();
+    println!("waiting...");
+    let (_tasks, task): (String, String) = con.blpop("tasks", 0).unwrap();
+    println!("task = {}", task);
     let setting = RunSetting {
         dt: 0.01,
         duration: 1000,
@@ -85,8 +92,15 @@ fn main() {
         db: "eom".to_string(),
         collection: "test".to_string(),
     };
-    let (s, r) = channel::<Doc>();
-    let output_thread = output(output_setting, r);
-    run(setting, s);
-    output_thread.join().unwrap();
+    (setting, output_setting)
+}
+
+fn main() {
+    loop {
+        let (rs, os) = get_setting();
+        let (s, r) = channel::<Doc>();
+        let output_thread = output(os, r);
+        run(rs, s);
+        output_thread.join().unwrap();
+    }
 }
