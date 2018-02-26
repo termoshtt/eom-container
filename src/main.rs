@@ -1,6 +1,7 @@
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+extern crate serde_json;
 
 extern crate bson;
 extern crate mongodb;
@@ -34,6 +35,7 @@ impl Doc {
     }
 }
 
+#[derive(Deserialize, Debug)]
 struct RunSetting {
     pub dt: f64,
     pub duration: usize,
@@ -55,6 +57,7 @@ fn run(setting: RunSetting, sender: Sender<Doc>) {
     }
 }
 
+#[derive(Deserialize, Debug)]
 struct OutputSetting {
     host: String,
     port: u16,
@@ -75,29 +78,38 @@ fn output(setting: OutputSetting, recv: Receiver<Doc>) -> JoinHandle<()> {
     })
 }
 
-fn get_setting() -> (RunSetting, OutputSetting) {
-    let cli = redis::Client::open("redis://localhost").unwrap();
+struct RedisSetting {
+    host: String,
+    fifo: String,
+}
+
+impl Default for RedisSetting {
+    fn default() -> Self {
+        RedisSetting {
+            host: "localhost".to_string(),
+            fifo: "tasks".to_string(),
+        }
+    }
+}
+
+fn get_task(setting: &RedisSetting) -> (RunSetting, OutputSetting) {
+    let cli = redis::Client::open(format!("redis://{}", setting.host).as_str()).unwrap();
     let con = cli.get_connection().unwrap();
-    println!("waiting...");
-    let (_tasks, task): (String, String) = con.blpop("tasks", 0).unwrap();
-    println!("task = {}", task);
-    let setting = RunSetting {
-        dt: 0.01,
-        duration: 1000,
-        skip: 10,
-    };
-    let output_setting = OutputSetting {
-        host: "localhost".to_string(),
-        port: 27017,
-        db: "eom".to_string(),
-        collection: "test".to_string(),
-    };
-    (setting, output_setting)
+    loop {
+        let (_tasks, task): (String, String) = con.blpop(&setting.fifo, 0).unwrap();
+        let rs = serde_json::from_str(&task);
+        let os = serde_json::from_str(&task);
+        match (rs, os) {
+            (Ok(rs), Ok(os)) => return (rs, os),
+            _ => eprintln!("Failed to parse JSON: {}", task),
+        };
+    }
 }
 
 fn main() {
+    let setting = RedisSetting::default();
     loop {
-        let (rs, os) = get_setting();
+        let (rs, os) = get_task(&setting);
         let (s, r) = channel::<Doc>();
         let output_thread = output(os, r);
         run(rs, s);
