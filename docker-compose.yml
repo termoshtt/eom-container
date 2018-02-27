@@ -1,0 +1,16 @@
+version: '2'
+services:
+  redis:
+    image: redis
+  mongo:
+    image: mongo
+  jupyter:
+    image: jupyter/scipy-notebook
+    ports:
+      - "8888:8888"
+  eom-worker:
+    depends_on:
+      - redis
+      - mongo
+    image: termoshtt/eom-worker
+    command: "--host redis"
