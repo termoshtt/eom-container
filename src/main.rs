@@ -1,20 +1,27 @@
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+extern crate serde_json;
+
+#[macro_use]
+extern crate structopt;
 
 extern crate bson;
 extern crate mongodb;
+extern crate redis;
 
 extern crate eom;
 extern crate ndarray;
 
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::{spawn, JoinHandle};
+use structopt::StructOpt;
 use ndarray::*;
 use eom::*;
 use eom::traits::*;
 use mongodb::ThreadedClient;
 use mongodb::db::ThreadedDatabase;
+use redis::Commands;
 
 #[derive(Serialize)]
 struct Doc {
@@ -32,6 +39,7 @@ impl Doc {
     }
 }
 
+#[derive(Deserialize, Debug)]
 struct RunSetting {
     pub dt: f64,
     pub duration: usize,
@@ -53,6 +61,7 @@ fn run(setting: RunSetting, sender: Sender<Doc>) {
     }
 }
 
+#[derive(Deserialize, Debug)]
 struct OutputSetting {
     host: String,
     port: u16,
@@ -73,20 +82,37 @@ fn output(setting: OutputSetting, recv: Receiver<Doc>) -> JoinHandle<()> {
     })
 }
 
+#[derive(StructOpt)]
+struct RedisSetting {
+    #[structopt(long = "host", default_value = "localhost")]
+    host: String,
+    #[structopt(long = "fifo", default_value = "tasks")]
+    fifo: String,
+}
+
+fn get_task(setting: &RedisSetting) -> (RunSetting, OutputSetting) {
+    let cli = redis::Client::open(format!("redis://{}", setting.host).as_str()).unwrap();
+    let con = cli.get_connection().unwrap();
+    loop {
+        eprint!("waiting... ");
+        let (_tasks, task): (String, String) = con.blpop(&setting.fifo, 0).unwrap();
+        eprintln!("Get Task!");
+        let rs = serde_json::from_str(&task);
+        let os = serde_json::from_str(&task);
+        match (rs, os) {
+            (Ok(rs), Ok(os)) => return (rs, os),
+            _ => eprintln!("Failed to parse JSON: {}", task),
+        };
+    }
+}
+
 fn main() {
-    let setting = RunSetting {
-        dt: 0.01,
-        duration: 1000,
-        skip: 10,
-    };
-    let output_setting = OutputSetting {
-        host: "localhost".to_string(),
-        port: 27017,
-        db: "eom".to_string(),
-        collection: "test".to_string(),
-    };
-    let (s, r) = channel::<Doc>();
-    let output_thread = output(output_setting, r);
-    run(setting, s);
-    output_thread.join().unwrap();
+    let setting = RedisSetting::from_args();
+    loop {
+        let (rs, os) = get_task(&setting);
+        let (s, r) = channel::<Doc>();
+        let output_thread = output(os, r);
+        run(rs, s);
+        output_thread.join().unwrap();
+    }
 }
