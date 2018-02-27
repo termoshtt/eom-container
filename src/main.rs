@@ -3,6 +3,9 @@ extern crate serde;
 extern crate serde_derive;
 extern crate serde_json;
 
+#[macro_use]
+extern crate structopt;
+
 extern crate bson;
 extern crate mongodb;
 extern crate redis;
@@ -12,6 +15,7 @@ extern crate ndarray;
 
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::{spawn, JoinHandle};
+use structopt::StructOpt;
 use ndarray::*;
 use eom::*;
 use eom::traits::*;
@@ -78,25 +82,21 @@ fn output(setting: OutputSetting, recv: Receiver<Doc>) -> JoinHandle<()> {
     })
 }
 
+#[derive(StructOpt)]
 struct RedisSetting {
+    #[structopt(long = "host", default_value = "localhost")]
     host: String,
+    #[structopt(long = "fifo", default_value = "tasks")]
     fifo: String,
-}
-
-impl Default for RedisSetting {
-    fn default() -> Self {
-        RedisSetting {
-            host: "localhost".to_string(),
-            fifo: "tasks".to_string(),
-        }
-    }
 }
 
 fn get_task(setting: &RedisSetting) -> (RunSetting, OutputSetting) {
     let cli = redis::Client::open(format!("redis://{}", setting.host).as_str()).unwrap();
     let con = cli.get_connection().unwrap();
     loop {
+        eprint!("waiting... ");
         let (_tasks, task): (String, String) = con.blpop(&setting.fifo, 0).unwrap();
+        eprintln!("Get Task!");
         let rs = serde_json::from_str(&task);
         let os = serde_json::from_str(&task);
         match (rs, os) {
@@ -107,7 +107,7 @@ fn get_task(setting: &RedisSetting) -> (RunSetting, OutputSetting) {
 }
 
 fn main() {
-    let setting = RedisSetting::default();
+    let setting = RedisSetting::from_args();
     loop {
         let (rs, os) = get_task(&setting);
         let (s, r) = channel::<Doc>();
