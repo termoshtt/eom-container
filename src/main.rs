@@ -70,12 +70,14 @@ struct OutputSetting {
 }
 
 fn output(setting: OutputSetting, recv: Receiver<Doc>) -> JoinHandle<()> {
-    let cli = mongodb::Client::connect(&setting.host, setting.port).unwrap();
+    let cli = mongodb::Client::connect(&setting.host, setting.port)
+        .expect("Unable to connect to MongoDB");
     let coll = cli.db(&setting.db).collection(&setting.collection);
     spawn(move || loop {
         match recv.recv() {
             Ok(doc) => {
-                coll.insert_one(doc.to_document(), None).unwrap();
+                coll.insert_one(doc.to_document(), None)
+                    .expect("Failed to insert document");
             }
             Err(_) => break,
         }
@@ -91,11 +93,14 @@ struct RedisSetting {
 }
 
 fn get_task(setting: &RedisSetting) -> (RunSetting, OutputSetting) {
-    let cli = redis::Client::open(format!("redis://{}", setting.host).as_str()).unwrap();
-    let con = cli.get_connection().unwrap();
+    let cli = redis::Client::open(format!("redis://{}", setting.host).as_str())
+        .expect("Failed to connect to Redis");
+    let con = cli.get_connection()
+        .expect("Failed to get Redis connection");
     loop {
         eprint!("waiting... ");
-        let (_tasks, task): (String, String) = con.blpop(&setting.fifo, 0).unwrap();
+        let (_tasks, task): (String, String) =
+            con.blpop(&setting.fifo, 0).expect("BLPOP operation fails");
         eprintln!("Get Task!");
         let rs = serde_json::from_str(&task);
         let os = serde_json::from_str(&task);
@@ -113,6 +118,6 @@ fn main() {
         let (s, r) = channel::<Doc>();
         let output_thread = output(os, r);
         run(rs, s);
-        output_thread.join().unwrap();
+        output_thread.join().expect("Failed to join output thread");
     }
 }
